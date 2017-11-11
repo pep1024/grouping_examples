@@ -1,0 +1,178 @@
+---
+title: "Grouping a continuous variable"
+author: "Pep Porrà"
+date: "Nov 10th, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In some situations, we want to group data of a continuous variable to create a discrete set. Although we lose information, it helps to give a meaning to the variable and exploring its dependencies with other variables in EDA. For instance, instead of looking at the height of basketball players as a continuous variable, we can define a new variable with 3 discrete values low, medium and tall. Then, we can look at the composition of the team of players that play when the match starts.
+
+So, given a vector of data of a continuous variable, how can we transform it into a discrete set? A similar problem is faced when we build a histogram of data, as variable is grouped into bins to build this data representation. 
+
+We can start by creating k identical groups in size. First, we order data. Second, assuming data have n values, n is divided into k groups. quantile function helps to achieve it. In what follows, we will use rivers dataset as an example. It gives the length of the 141 "major" rivers in North America. 
+
+```{r}
+data(rivers)
+```
+
+Supose we want to create 4 equal groups. Then
+
+```{r}
+br <- quantile(rivers, (0:4) / 4)
+```
+
+gives the right breaks to use in the function cut and obtain the factor that creates the 4 equal groups. Take into account that there are different methods to obtain the quantiles so the exact limit boundaries of the groups do not have to agree. By default, quantile uses type 7.
+
+The 4 equal size groups split will be
+```{r}
+groups <- cut(rivers, br, include.lowest = TRUE, dig.lab = 4)
+levels(groups)
+```
+
+```{r}
+summary(groups)
+```
+
+By grouping, information was lost. We can look at the proportion of the variance in rivers data that can be explained by the 4 groups
+
+```{r}
+ss_decomposition <- function(v, f){
+    means <- tapply(v, f, mean)
+    means[is.na(means)] <- 0
+    n <- tapply(v, f, length)
+    n[is.na(n)] <- 0
+    avg_v <- mean(v)
+    sst <- sum((v - avg_v)^2)
+    sse <- sum(n * (means - avg_v)^2)
+    means_f <- rep(means, n)
+    ssi <- sum((v[order(f)] - means_f)^2)
+    list(mean_t = avg_v, means = means, sizes = n,
+        sst = sst, sse = sse, ssi = ssi, check = sse + ssi,
+        ratio_ss = sse/sst,
+        var_explained = sprintf("%.2f%%", sse/sst * 100))
+}
+test_variance <- ss_decomposition(rivers, groups)
+test_variance$var_explained
+```
+
+The intervals chosen have not meaning beyond corresponding to those that divide rivers dataset in 4 equal groups.
+
+We can define other ranges and check later if they explain more or less variance. For instance, I'd suggest the following groups
+```{r}
+br2 <- c(0, 300, 400, 700, 5000)
+groups2 <- cut(rivers, breaks = br2, include.lowest = TRUE,
+    labels = c("<=300", "(300, 400]", "(400, 700]", ">700"))
+summary(groups2)
+```
+
+Variance explained is, for groups2,
+
+```{r}
+ss_decomposition(rivers, groups2)$var_explained
+```
+
+Without the restriction of having the same number of data points in each group, we can divide the range of the variable in k parts. This is exactly what cut function does when breaks = k
+
+```{r}
+groups3 <- cut(rivers, 4, include.lowest = TRUE, dig.lab = 4)
+summary(groups3)
+```
+that explains this variance
+
+```{r}
+ss_decomposition(rivers, groups3)$var_explained
+```
+
+Once we have this suggestion we can define groups with simpler boundaries
+```{r}
+br4 <- c(0, 1000, 2000, 3000, 5000)
+groups4 <- cut(rivers, breaks = br4, include.lowest = TRUE,
+    labels = c("<=1e3", "(1e3, 2e3]", "(2e3, 3e3]", ">3e3"))
+summary(groups4)
+```
+which explains the same variance as group3 but it has more appealing boundaries
+```{r}
+ss_decomposition(rivers, groups4)$var_explained
+```
+
+Clustering methods can be used to define the groups. For instance,
+```{r}
+d <- dist(rivers)
+hc <- hclust(d)
+resp <- cutree(hc, k = 4)
+tapply(rivers, resp, range)
+```
+
+Once we have this suggestion, a new grouping can be defined
+```{r}
+br5 <- c(0, 1150, 2000, 3000, 5000)
+groups5 <- cut(rivers, breaks = br5, include.lowest = TRUE,
+    labels = c("<=1.25e3", "(1.25e3, 2e3]", "(2e3, 3e3]", ">3e3"))
+summary(groups5)
+```
+
+which explains this part of the variance
+
+```{r}
+ss_decomposition(rivers, groups5)$var_explained
+```
+
+In same cases, we could be interested in finding the number of groups that explain a given proportion of the variance, 90%, for instance. Minimum k explaining a given amount of variance can be found by iteration. Function k_best is a simple protype of it.
+
+```{r}
+var_explained <- function(k, v){
+    computed_breaks <- cut(v, k, include.lowest = TRUE, dig.lab = 4)
+    proportion_variance_explained <- ss_decomposition(v, computed_breaks)$ratio_ss
+    return(proportion_variance_explained)
+}
+
+k_best <- function(v, limit = 0.8, kmax = 20){
+    # we assume more than 50 points
+    total <- sapply(2:kmax, var_explained, v)
+    n_bins <- which(total >= limit )[1] + 1
+    list(k = n_bins, groups = cut(v, n_bins, include.lowest = TRUE, dig.lab = 4))
+}
+    
+k_best(rivers, 0.90)$k
+```
+
+### Example
+
+We give one more example of grouping a continuous variable. We take in this case the faithful dataset and try to group the eruptions times.
+
+```{r}
+data(faithful)
+eruptions <- faithful$eruptions
+groups_best <- k_best(eruptions, 0.9)
+groups_best$k
+```
+
+```{r}
+summary(groups_best$groups)
+```
+
+Looking at data always helps to 
+```{r}
+hist(eruptions, 20)
+```
+
+We realize that although 3 groups explain more than 90% of the variance, a couple of groups could be enough depending of the purpose
+
+```{r}
+br6 <- c(0, 3, 6)
+groups6 <- cut(eruptions, breaks = br6, include.lowest = TRUE,
+    labels = c("<=3 min", ">3 min"))
+summary(groups6)
+```
+
+which already accounts for a great part of the variance
+
+```{r}
+ss_decomposition(eruptions, groups6)$var_explained
+```
+
+This short note is dedicated to Luca Cerone, a Data scientist I worked with and an R activist.
