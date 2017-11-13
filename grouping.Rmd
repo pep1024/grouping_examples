@@ -1,5 +1,5 @@
 ---
-title: "Grouping a continuous variable"
+title: "Grouping a numeric variable"
 author: "Pep Porrà"
 date: "Nov 10th, 2017"
 output: html_document
@@ -57,6 +57,12 @@ ss_decomposition <- function(v, f){
 }
 test_variance <- ss_decomposition(rivers, groups)
 test_variance$var_explained
+```
+
+We could also use aov function to compute the variance explained
+```{r}
+aov_summary <- summary(aov(rivers ~ groups))
+aov_summary[[1]]$`Sum Sq`[1] / sum(aov_summary[[1]]$`Sum Sq`)
 ```
 
 The intervals chosen have not meaning beyond corresponding to those that divide rivers dataset in 4 equal groups.
